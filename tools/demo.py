@@ -77,6 +77,24 @@ def make_parser():
         action="store_true",
         help="Using TensorRT model for testing.",
     )
+    parser.add_argument(
+        "-t",
+        "--norm-threshold",
+        dest="norm_threshold",
+        default=50,
+        type=int,
+        help="Norm color threshold.",
+    )
+    parser.add_argument(
+      '-l',
+      '--colors', 
+      nargs='+', 
+      dest="colors",
+      default=[],
+      required=False,
+      help='Detection colors.', 
+    )
+
     return parser
 
 
@@ -100,6 +118,8 @@ class Predictor(object):
         trt_file=None,
         decoder=None,
         device="cpu",
+        norm_threshold=50,
+        colors=[],
     ):
         self.model = model
         self.cls_names = cls_names
@@ -109,6 +129,8 @@ class Predictor(object):
         self.nmsthre = exp.nmsthre
         self.test_size = exp.test_size
         self.device = device
+        self.norm_threshold = norm_threshold
+        self.colors = colors
         if trt_file is not None:
             from torch2trt import TRTModule
 
@@ -166,7 +188,7 @@ class Predictor(object):
         cls = output[:, 6]
         scores = output[:, 4] * output[:, 5]
 
-        vis_res = vis(img, bboxes, scores, cls, cls_conf, self.cls_names)
+        vis_res = vis(img, bboxes, scores, cls, cls_conf * 2, self.cls_names, self.norm_threshold, self.colors)
         return vis_res
 
 
@@ -240,7 +262,7 @@ def main(exp, args):
     logger.info("Args: {}".format(args))
 
     if args.conf is not None:
-        exp.test_conf = args.conf
+        exp.test_conf = args.conf / 2
     if args.nms is not None:
         exp.nmsthre = args.nms
     if args.tsize is not None:
@@ -281,7 +303,7 @@ def main(exp, args):
         trt_file = None
         decoder = None
 
-    predictor = Predictor(model, exp, COCO_CLASSES, trt_file, decoder, args.device)
+    predictor = Predictor(model, exp, COCO_CLASSES, trt_file, decoder, args.device, args.norm_threshold, args.colors)
     current_time = time.localtime()
     if args.demo == "image":
         image_demo(predictor, vis_folder, args.path, current_time, args.save_result)
