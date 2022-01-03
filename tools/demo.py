@@ -77,6 +77,24 @@ def make_parser():
         action="store_true",
         help="Using TensorRT model for testing.",
     )
+    parser.add_argument(
+        "-t",
+        "--norm-threshold",
+        dest="norm_threshold",
+        default=50,
+        type=int,
+        help="Norm color threshold.",
+    )
+    parser.add_argument(
+      '-l',
+      '--colors', 
+      nargs='+', 
+      dest="colors",
+      default=[],
+      required=False,
+      help='Detection colors.', 
+    )
+
     return parser
 
 
@@ -100,6 +118,8 @@ class Predictor(object):
         trt_file=None,
         decoder=None,
         device="cpu",
+        norm_threshold=50,
+        colors=[],
     ):
         self.model = model
         self.cls_names = cls_names
@@ -109,6 +129,8 @@ class Predictor(object):
         self.nmsthre = exp.nmsthre
         self.test_size = exp.test_size
         self.device = device
+        self.norm_threshold = norm_threshold
+        self.colors = colors
         if trt_file is not None:
             from torch2trt import TRTModule
 
@@ -166,7 +188,7 @@ class Predictor(object):
         cls = output[:, 6]
         scores = output[:, 4] * output[:, 5]
 
-        vis_res = vis(img, bboxes, scores, cls, cls_conf, self.cls_names)
+        vis_res = vis(img, bboxes, scores, cls, cls_conf * 2, self.cls_names, self.norm_threshold, self.colors)
         return vis_res
 
 
@@ -180,11 +202,7 @@ def image_demo(predictor, vis_folder, path, current_time, save_result):
         outputs, img_info = predictor.inference(image_name)
         result_image = predictor.visual(outputs[0], img_info, predictor.confthre)
         if save_result:
-            save_folder = os.path.join(
-                vis_folder, time.strftime("%Y_%m_%d_%H_%M_%S", current_time)
-            )
-            os.makedirs(save_folder, exist_ok=True)
-            save_file_name = os.path.join(save_folder, os.path.basename(image_name))
+            save_file_name = os.path.join(vis_folder, os.path.basename(image_name))
             logger.info("Saving detection result in {}".format(save_file_name))
             cv2.imwrite(save_file_name, result_image)
         ch = cv2.waitKey(0)
@@ -227,12 +245,9 @@ def main(exp, args):
     if not args.experiment_name:
         args.experiment_name = exp.exp_name
 
-    file_name = os.path.join(exp.output_dir, args.experiment_name)
-    os.makedirs(file_name, exist_ok=True)
-
-    if args.save_result:
-        vis_folder = os.path.join(file_name, "vis_res")
-        os.makedirs(vis_folder, exist_ok=True)
+    abs_path = os.path.realpath(__file__)
+    vis_folder = os.path.join(exp.output_dir, "results")
+    os.makedirs(vis_folder, exist_ok=True)
 
     if args.trt:
         args.device = "gpu"
@@ -240,7 +255,7 @@ def main(exp, args):
     logger.info("Args: {}".format(args))
 
     if args.conf is not None:
-        exp.test_conf = args.conf
+        exp.test_conf = args.conf / 2
     if args.nms is not None:
         exp.nmsthre = args.nms
     if args.tsize is not None:
@@ -281,7 +296,7 @@ def main(exp, args):
         trt_file = None
         decoder = None
 
-    predictor = Predictor(model, exp, COCO_CLASSES, trt_file, decoder, args.device)
+    predictor = Predictor(model, exp, COCO_CLASSES, trt_file, decoder, args.device, args.norm_threshold, args.colors)
     current_time = time.localtime()
     if args.demo == "image":
         image_demo(predictor, vis_folder, args.path, current_time, args.save_result)
