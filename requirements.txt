@@ -9,7 +9,6 @@ opencv_python
 loguru
 scikit-image
 tqdm
-torchvision
 Pillow
 thop
 ninja
